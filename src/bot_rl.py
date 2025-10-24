@@ -23,28 +23,50 @@ class FlamewallRL(BaseAgent):
         try:
             # Import here to avoid loading if not needed
             from stable_baselines3 import PPO
+            import glob
             
-            # Path to trained model (use the best available)
-            model_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models', 'rlgym_real')
-            
-            # Try to load the final model, or fall back to latest checkpoint
-            model_files = [
-                'flamewall_final.zip',
-                'flamewall_1000000_steps.zip',
-                'flamewall_950000_steps.zip',
+            # Check both training directories and use the most recent
+            base_dir = os.path.dirname(os.path.dirname(__file__))
+            model_dirs = [
+                os.path.join(base_dir, 'models', 'rlgym_advanced'),  # Check advanced first (better training)
+                os.path.join(base_dir, 'models', 'rlgym_real'),
             ]
             
-            for model_file in model_files:
-                model_path = os.path.join(model_dir, model_file)
-                if os.path.exists(model_path):
-                    print(f"Loading trained model: {model_path}")
-                    self.model = PPO.load(model_path)
-                    self.model_loaded = True
-                    print("✓ Model loaded successfully!")
-                    break
+            best_model = None
+            best_steps = 0
             
-            if not self.model_loaded:
-                print("⚠️  No trained model found! Train a model first with: py -3.10 train_real.py")
+            for model_dir in model_dirs:
+                if not os.path.exists(model_dir):
+                    continue
+                    
+                # Find all checkpoint files
+                checkpoints = glob.glob(os.path.join(model_dir, '*_steps.zip'))
+                for checkpoint in checkpoints:
+                    # Extract step count from filename
+                    try:
+                        steps = int(checkpoint.split('_')[-2])
+                        if steps > best_steps:
+                            best_steps = steps
+                            best_model = checkpoint
+                    except:
+                        pass
+                
+                # Also check for final/interrupted models
+                for special_file in ['flamewall_final.zip', 'flamewall_advanced_final.zip', 'flamewall_interrupted.zip']:
+                    special_path = os.path.join(model_dir, special_file)
+                    if os.path.exists(special_path):
+                        # Consider these as "latest" if we haven't found a better one
+                        if not best_model:
+                            best_model = special_path
+            
+            if best_model:
+                print(f"Loading trained model: {best_model}")
+                print(f"  Training steps: {best_steps if best_steps > 0 else 'final'}")
+                self.model = PPO.load(best_model)
+                self.model_loaded = True
+                print("✓ Model loaded successfully!")
+            else:
+                print("⚠️  No trained model found! Train a model first.")
                 
         except Exception as e:
             print(f"Error loading model: {e}")
