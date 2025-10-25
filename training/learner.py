@@ -9,7 +9,7 @@ from rocket_learn.rollout_generator.redis.redis_rollout_generator import RedisRo
 from training.agent import get_agent
 from training.obs import NectoObsBuilder
 from training.parser import NectoAction
-from training.reward import NectoRewardFunction
+from training.reward import FlamewallRewardFunction
 
 from rocket_learn.utils.stat_trackers.common_trackers import Speed, Demos, TimeoutRate, Touch, EpisodeLength, Boost, \
     BehindBall, TouchHeight, DistToBall
@@ -46,10 +46,10 @@ if __name__ == "__main__":
     stat_trackers = [
         Speed(), Demos(), TimeoutRate(), Touch(), EpisodeLength(), Boost(), BehindBall(), TouchHeight(), DistToBall()
     ]
-    rollout_gen = RedisRolloutGenerator("tecko",
+    rollout_gen = RedisRolloutGenerator("flamewall",
                                         redis,
                                         lambda: NectoObsBuilder(None, 6),
-                                        lambda: NectoRewardFunction(),
+                                        lambda: FlamewallRewardFunction(),
                                         NectoAction,
                                         save_every=logger.config.iterations_per_save,
                                         model_every=logger.config.iterations_per_model,

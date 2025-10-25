@@ -10,7 +10,7 @@ from rlgym.utils.math import cosine_similarity
 from rocket_learn.utils.scoreboard import win_prob
 
 
-class NectoRewardFunction(RewardFunction):
+class FlamewallRewardFunction(RewardFunction):
     BLUE_GOAL = (np.array(BLUE_GOAL_BACK) + np.array(BLUE_GOAL_CENTER)) / 2
     ORANGE_GOAL = (np.array(ORANGE_GOAL_BACK) + np.array(ORANGE_GOAL_CENTER)) / 2
 
@@ -32,7 +32,11 @@ class NectoRewardFunction(RewardFunction):
             touch_height_w=3,
             touch_accel_w=0.5,
             flip_reset_w=10,
-            opponent_punish_w=1
+            opponent_punish_w=1,
+            # 🔥 FLAMEWALL HIVEMIND REWARDS 🔥
+            spacing_w=0.75,           # Reward good spacing between teammates
+            coverage_w=0.5,           # Reward covering different field zones
+            no_stack_w=1.0            # Punish 3 bots chasing same ball
     ):
         self.team_spirit = team_spirit
         self.current_state = None
@@ -54,6 +58,10 @@ class NectoRewardFunction(RewardFunction):
         self.touch_accel_w = touch_accel_w
         self.flip_reset_w = flip_reset_w
         self.opponent_punish_w = opponent_punish_w
+        # 🔥 FLAMEWALL HIVEMIND WEIGHTS 🔥
+        self.spacing_w = spacing_w
+        self.coverage_w = coverage_w
+        self.no_stack_w = no_stack_w
         self.state_quality = None
         self.player_qualities = None
         self.rewards = None
@@ -238,6 +246,40 @@ class NectoRewardFunction(RewardFunction):
         orange = player_rewards[mid:]
         bm = np.nan_to_num(blue.mean())
         om = np.nan_to_num(orange.mean())
+
+        # 🔥 FLAMEWALL HIVEMIND REWARDS 🔥
+        # Reward good spacing and punish ball stacking
+        for team_slice, team_name in [(slice(None, mid), 'blue'), (slice(mid, None), 'orange')]:
+            team_players = state.players[team_slice]
+            if len(team_players) >= 2:
+                ball_pos = state.ball.position
+                
+                # Calculate distances between teammates
+                positions = np.array([p.car_data.position for p in team_players])
+                
+                # Spacing reward: reward being 800-2500 units apart
+                for i, p1 in enumerate(team_players):
+                    for j, p2 in enumerate(team_players[i+1:], start=i+1):
+                        distance = norm(positions[i] - positions[j])
+                        # Ideal spacing zone
+                        if 800 < distance < 2500:
+                            spacing_reward = self.spacing_w * 0.5
+                        elif distance < 500:
+                            # Too close - ball chasing!
+                            spacing_reward = -self.no_stack_w * 0.3
+                        else:
+                            spacing_reward = 0
+                        
+                        player_rewards[team_slice.start + i] += spacing_reward
+                        player_rewards[team_slice.start + j] += spacing_reward
+                
+                # Anti-stacking: Punish if all 3 are within 1000 units of ball
+                if len(team_players) == 3:
+                    distances_to_ball = [norm(p.car_data.position - ball_pos) for p in team_players]
+                    if all(d < 1000 for d in distances_to_ball):
+                        # All 3 stacked on ball - BIG PUNISHMENT
+                        stack_penalty = -self.no_stack_w
+                        player_rewards[team_slice] += stack_penalty
 
         player_rewards[:mid] = ((1 - self.team_spirit) * blue + self.team_spirit * bm
                                 - self.opponent_punish_w * om)

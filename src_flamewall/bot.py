@@ -162,8 +162,8 @@ class Flamewall(BaseAgent):
                     chaser_pos = Flamewall._shared_state['positions'].get(current_chaser)
                     if chaser_pos is not None:
                         chaser_distance = np.linalg.norm(chaser_pos[:2] - ball_pos[:2])
-                        # Take over if we're much closer (500 units) and have boost
-                        if ball_distance < chaser_distance - 500 and player.boost_amount > 30:
+                        # Take over if we're closer (250 units) and have boost
+                        if ball_distance < chaser_distance - 250 and player.boost_amount > 12:
                             Flamewall._shared_state['ball_chaser'] = self.index
             
             # Assign roles based on ball chaser
