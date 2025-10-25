@@ -74,7 +74,7 @@ class Flamewall(BaseAgent):
         print('🔥 FLAMEWALL Ready - Index:', index)
         print("Hivemind ENABLED - Coordinated team play active")
         print("Remember to run at 120fps with vsync off!")
-        print("Based on Nexto's architecture - trained for tournament dominance")
+        print("Advanced RL bot trained with PPO for tournament play")
 
     def initialize_agent(self):
         # Initialize the rlgym GameState object now that the game is active and the info is available
