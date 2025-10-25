@@ -1,12 +1,17 @@
 import argparse
+import os
 import random
 import sys
 
+# Add parent directory to Python path so training modules can be imported
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 from redis import Redis
-from redis.retry import Retry
+# Redis 3.x compatibility - these don't exist in redis 3.5.3
+# from redis.retry import Retry
+# from redis.backoff import EqualJitterBackoff
 from redis.exceptions import TimeoutError, ConnectionError
-from redis.backoff import EqualJitterBackoff
 from rlgym.envs import Match
 from rlgym_tools.extra_state_setters.augment_setter import AugmentSetter
 
@@ -21,28 +26,26 @@ except ImportError:
 
 from training.obs import NectoObsBuilder
 from training.parser import NectoAction
-from training.reward import NectoRewardFunction
+from training.reward import FlamewallRewardFunction
 from training.state import NectoStateSetter
 from training.terminal import NectoTerminalCondition, NectoHumanTerminalCondition
 
 
 def get_match(r, force_match_size, scoreboard, game_speed=100, human_match=False):
-    if force_match_size is not None:
-        team_size = force_match_size  # TODO
-    else:
-        team_size = 3
+    # Force 1v1 for Tsunami Surge training
+    team_size = 1
 
     terminals = NectoTerminalCondition
     if human_match:
         terminals = NectoHumanTerminalCondition
 
     return Match(
-        reward_function=NectoRewardFunction(),
+        reward_function=FlamewallRewardFunction(),
         terminal_conditions=NectoTerminalCondition(),
         obs_builder=NectoObsBuilder(scoreboard, None, 6),
-        action_parser=NectoAction(),  # NectoActionTEST(),  # KBMAction()
+        action_parser=NectoAction(),
         state_setter=AugmentSetter(NectoStateSetter(r)),
-        team_size=3,
+        team_size=1,  # 1v1 self-play
         spawn_opponents=True,
         game_speed=game_speed,
     )
@@ -54,8 +57,8 @@ def make_worker(host, name, password, limit_threads=True, send_obs=True,
     if limit_threads:
         torch.set_num_threads(1)
 
-    r = Redis(host=host, password=password, socket_timeout=300, health_check_interval=30,
-              retry_on_error=(ConnectionError, TimeoutError), retry=Retry(EqualJitterBackoff(cap=10, base=1), retries=-1))
+    # Redis 3.x compatibility - removed retry parameters that don't exist in 3.5.3
+    r = Redis(host=host, password=password, socket_timeout=300)
 
     agents = None
     human = None
@@ -125,6 +128,9 @@ def main():
     name = args.name.replace("'", "")
     ip = args.ip.replace("'", "")
     password = args.password.replace("'", "")
+    # Convert "None" string to actual None for Redis
+    if password.lower() == "none" or password == "":
+        password = None
     compress = args.compress
     stream_state = args.streamer_mode
     deterministic = args.deterministic

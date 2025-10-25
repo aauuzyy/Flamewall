@@ -15,6 +15,6 @@ gym==0.24.0
 scipy
 pygame==2.1.2
 keyboard==0.13.5
-rlgym==1.2.0
-rlgym-tools
+rlgym==2.0.1
+rlgym-tools==1.8.3
 numba==0.55.2

@@ -1,0 +1,26 @@
+{
+    "os": "Windows-10-10.0.26100-SP0",
+    "python": "3.9.0",
+    "heartbeatAt": "2025-10-25T20:44:49.144866",
+    "startedAt": "2025-10-25T20:44:46.900403",
+    "docker": null,
+    "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+    "gpu_count": 1,
+    "cpu_count": 12,
+    "cuda": null,
+    "args": [
+        "localhost"
+    ],
+    "state": "running",
+    "program": "C:\\Users\\gavin\\AppData\\Local\\RLBotGUIX\\MyBots\\Flamewall\\training\\learner.py",
+    "codePath": "training\\learner.py",
+    "git": {
+        "remote": "https://github.com/aauuzyy/Flamewall.git",
+        "commit": "14850735c9f7dd93dae5c4a5dad0950fee03c382"
+    },
+    "email": "aauuzyy@gmail.com",
+    "root": "C:/Users/gavin/AppData/Local/RLBotGUIX/MyBots/Flamewall",
+    "host": "GavinComputer",
+    "username": "gavin",
+    "executable": "C:\\Users\\gavin\\AppData\\Local\\RLBotGUIX\\MyBots\\Flamewall\\training_env\\Scripts\\python.exe"
+}

@@ -24,9 +24,9 @@ LIN_VEL = slice(8, 11)
 FW = slice(11, 14)
 UP = slice(14, 17)
 ANG_VEL = slice(17, 20)
-BOOST, DEMO, ON_GROUND, HAS_FLIP, HAS_JUMP = range(20, 25)
-ACTIONS = range(25, 33)
-GOAL_DIFF, TIME_LEFT, IS_OVERTIME = range(33, 36)
+BOOST, DEMO, ON_GROUND, HAS_FLIP = range(20, 24)
+ACTIONS = range(24, 32)
+GOAL_DIFF, TIME_LEFT, IS_OVERTIME = range(32, 35)
 
 
 # BOOST, DEMO, ON_GROUND, HAS_FLIP = range(20, 24)
@@ -35,8 +35,8 @@ GOAL_DIFF, TIME_LEFT, IS_OVERTIME = range(33, 36)
 
 class NectoObsBuilder(BatchedObsBuilder):
     _boost_locations = np.array(BOOST_LOCATIONS)
-    _invert = np.array([1] * 5 + [-1, -1, 1] * 5 + [1] * 5 + [1] * 30)
-    _norm = np.array([1.] * 5 + [2300] * 6 + [1] * 6 + [5.5] * 3 + [1, 10, 1, 1, 1] + [1] * 30)
+    _invert = np.array([1] * 5 + [-1, -1, 1] * 5 + [1] * 4 + [1] * 30)  # rlgym 2.0: removed HAS_JUMP, 4 instead of 5
+    _norm = np.array([1.] * 5 + [2300] * 6 + [1] * 6 + [5.5] * 3 + [1, 10, 1, 1] + [1] * 30)  # rlgym 2.0: removed HAS_JUMP
 
     def __init__(self, scoreboard: Scoreboard, env: Gym = None, n_players=6, tick_skip=8):
         super().__init__(scoreboard)
@@ -71,10 +71,23 @@ class NectoObsBuilder(BatchedObsBuilder):
         players = self.n_players or 6
         entities = 1 + players + len(self._boost_locations)
         return Tuple((
-            Box(-np.inf, np.inf, (1, len(self._invert) - 30 + 8)),
-            Box(-np.inf, np.inf, (entities, len(self._invert))),
+            Box(-np.inf, np.inf, (1, 24 + 8 + 3)),  # q: 24 entity features + 8 actions + 3 scoreboard (rlgym 2.0)
+            Box(-np.inf, np.inf, (entities, 54)),  # kv: 54 features per entity (rlgym 2.0, removed HAS_JUMP)
             Box(-np.inf, np.inf, (entities,)),
         ))
+
+    def build_obs(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> Any:
+        # Handle initialization phase - return dummy obs matching obs_space without calling pre_step
+        if self.current_obs is None:
+            # Return a dummy observation with the correct shape for auto-detection
+            players = self.n_players or 6
+            entities = 1 + players + len(self._boost_locations)
+            return (
+                np.zeros((1, 35)),  # q shape
+                np.zeros((entities, 54)),  # kv shape
+                np.zeros((entities,))  # m shape
+            )
+        return super().build_obs(player, state, previous_action)
 
     @staticmethod
     def _quats_to_rot_mtx(quats: np.ndarray) -> np.ndarray:
@@ -219,7 +232,11 @@ class NectoObsBuilder(BatchedObsBuilder):
         lim_players = n_players if self.n_players is None else self.n_players
         n_entities = lim_players + 1 + 34  # Includes player+ball+boosts
 
-        teams = encoded_states[0, players_start_index + 1::player_length]
+        # Cap n_players to lim_players if configured to avoid mismatches
+        if self.n_players is not None and n_players > self.n_players:
+            n_players = self.n_players
+        
+        teams = encoded_states[0, players_start_index + 1::player_length][:n_players]
 
         # Update boost and demo timers
         # Need to create them here since numba does not support array creation
@@ -244,9 +261,10 @@ class NectoObsBuilder(BatchedObsBuilder):
         sel_boosts = slice(sel_ball + 1, None)
 
         # MAIN ARRAYS
-        q = np.zeros((n_players, encoded_states.shape[0], 1, 25 + 8 + 3))
-        kv = np.zeros((n_players, encoded_states.shape[0], n_entities, 25 + 30))
-        m = np.zeros((n_players, encoded_states.shape[0], n_entities))  # Mask is shared
+        # Use lim_players for array dimensions to match configured limit
+        q = np.zeros((lim_players, encoded_states.shape[0], 1, 24 + 8 + 3))  # 24: removed HAS_JUMP from features
+        kv = np.zeros((lim_players, encoded_states.shape[0], n_entities, 24 + 30))  # 24: removed HAS_JUMP
+        m = np.zeros((lim_players, encoded_states.shape[0], n_entities))  # Mask is shared
 
         # SCOREBOARD
         blue_score = encoded_states[:, SC.BALL_ANGULAR_VELOCITY.start + 9]
@@ -256,8 +274,16 @@ class NectoObsBuilder(BatchedObsBuilder):
         is_overtime = (ticks_left > 0) & np.isinf(ticks_left)
         goal_diff = np.clip(blue_score - orange_score, -5, 5) / 5
         time_left = (~is_overtime) * np.clip(ticks_left, 0, 300) / (120 * 60 * 5)
-        q[teams == 0, :, 0, GOAL_DIFF] = goal_diff
-        q[teams == 1, :, 0, GOAL_DIFF] = -goal_diff
+        
+        # For each player, assign goal_diff based on their team
+        for i in range(n_players):
+            if i < len(teams):  # Ensure we don't go out of bounds
+                team = teams[i]
+                if team == 0:  # Blue team
+                    q[i, :, 0, GOAL_DIFF] = goal_diff
+                else:  # Orange team
+                    q[i, :, 0, GOAL_DIFF] = -goal_diff
+        
         q[:, :, 0, TIME_LEFT] = time_left
         q[:, :, 0, IS_OVERTIME] = is_overtime
 
@@ -273,8 +299,10 @@ class NectoObsBuilder(BatchedObsBuilder):
         kv[:, :, sel_boosts, DEMO] = boost_timers
 
         # PLAYERS
-        kv[:, :, :n_players, IS_MATE] = 1 - teams  # Default team is blue
-        kv[:, :, :n_players, IS_OPP] = teams
+        # Reshape teams for broadcasting: (n_players,) -> (1, 1, n_players)
+        teams_broadcast = teams.reshape(1, 1, -1)
+        kv[:, :, :n_players, IS_MATE] = 1 - teams_broadcast  # Default team is blue
+        kv[:, :, :n_players, IS_OPP] = teams_broadcast
         for i in range(n_players):
             encoded_player = encoded_states[:,
                              players_start_index + i * player_length: players_start_index + (i + 1) * player_length]
@@ -291,16 +319,17 @@ class NectoObsBuilder(BatchedObsBuilder):
             kv[:, :, i, DEMO] = demo_timers[:, i]
             kv[:, :, i, ON_GROUND] = encoded_player[:, SC.ON_GROUND.start]
             kv[:, :, i, HAS_FLIP] = encoded_player[:, SC.HAS_FLIP.start]
-            kv[:, :, i, HAS_JUMP] = encoded_player[:, SC.HAS_JUMP.start]
 
-        kv[teams == 1] *= self._invert
-        kv[np.argwhere(teams == 1), ..., (IS_MATE, IS_OPP)] = kv[
-            np.argwhere(teams == 1), ..., (IS_OPP, IS_MATE)]  # Swap teams
+        # Only process the actual players (n_players), not the full lim_players array
+        kv[:n_players][teams == 1] *= self._invert
+        orange_mask = np.argwhere(teams == 1)
+        if len(orange_mask) > 0:
+            kv[orange_mask, ..., (IS_MATE, IS_OPP)] = kv[orange_mask, ..., (IS_OPP, IS_MATE)]  # Swap teams
 
         kv /= self._norm
 
         for i in range(n_players):
-            q[i, :, 0, :HAS_JUMP + 1] = kv[i, :, i, :HAS_JUMP + 1]
+            q[i, :, 0, :HAS_FLIP + 1] = kv[i, :, i, :HAS_FLIP + 1]
 
         self.add_relative_components(q, kv)
 
@@ -310,6 +339,9 @@ class NectoObsBuilder(BatchedObsBuilder):
         return [(q[i], kv[i], m[i]) for i in range(n_players)]
 
     def add_actions(self, obs: Any, previous_actions: np.ndarray, player_index=None):
+        # Safety check for initialization phase
+        if obs is None:
+            return
         if player_index is None:
             for (q, kv, m), act in zip(obs, previous_actions):
                 q[:, 0, ACTIONS] = act

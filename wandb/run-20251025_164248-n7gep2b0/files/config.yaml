@@ -1,0 +1,57 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.12.18
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.9.0
+    start_time: 1761424969
+    t:
+      1:
+      - 1
+      - 55
+      3:
+      - 13
+      - 15
+      - 16
+      4: 3.9.0
+      5: 0.12.18
+      8:
+      - 3
+      - 5
+actor_lr:
+  desc: null
+  value: 0.0001
+batch_size:
+  desc: null
+  value: 100000
+critic_lr:
+  desc: null
+  value: 0.0001
+ent_coef:
+  desc: null
+  value: 0.01
+epochs:
+  desc: null
+  value: 30
+gamma:
+  desc: null
+  value: 0.995
+iterations_per_model:
+  desc: null
+  value: 50
+iterations_per_save:
+  desc: null
+  value: 50
+minibatch_size:
+  desc: null
+  value: 10000
+n_steps:
+  desc: null
+  value: 1000000
+seed:
+  desc: null
+  value: 123

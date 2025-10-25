@@ -1,0 +1,3 @@
+#!C:\Users\gavin\AppData\Local\RLBotGUIX\MyBots\Flamewall\training_env\Scripts\python.exe
+from numba.pycc import main
+main()

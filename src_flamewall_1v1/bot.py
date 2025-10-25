@@ -25,6 +25,13 @@ KICKOFF_NUMPY = np.array([
 
 
 class TsunamiSurge(BaseAgent):
+    # Shared state for hivemind coordination
+    _shared_state = {
+        'ball_chaser': None,  # Which bot is chasing ball
+        'positions': {},      # Bot positions
+        'boost_status': {},   # Boost amounts
+        'assignments': {}     # Role assignments
+    }
     
     def __init__(self, name, team, index,
                  beta=1, render=False, hardcoded_kickoffs=True, stochastic_kickoffs=True):
@@ -40,10 +47,6 @@ class TsunamiSurge(BaseAgent):
         self.render = render
         self.hardcoded_kickoffs = hardcoded_kickoffs
         self.stochastic_kickoffs = stochastic_kickoffs
-        
-        # Demo strategy tracking
-        self.demo_mode_active = False
-        self.opponent_in_goal = False
 
         self.game_state: GameState = None
         self.controls = None
@@ -69,8 +72,9 @@ class TsunamiSurge(BaseAgent):
         self.lastPacket = None
 
         print('🌊 TSUNAMI SURGE Ready - Index:', index)
-        print("1v1 MODE - Overwhelming offensive pressure")
+        print("Hivemind ENABLED - Coordinated team play active")
         print("Remember to run at 120fps with vsync off!")
+        print("Advanced RL bot trained with PPO for tournament play")
 
     def initialize_agent(self):
         # Initialize the rlgym GameState object now that the game is active and the info is available
@@ -131,6 +135,40 @@ class TsunamiSurge(BaseAgent):
         ticks_elapsed = round(delta * 120)
         self.ticks += ticks_elapsed
         self.game_state.decode(packet, ticks_elapsed)
+        
+        # 🔥 HIVEMIND: Update shared state with current bot's info
+        if len(self.game_state.players) > self.index:
+            player = self.game_state.players[self.index]
+            ball_pos = np.array(self.game_state.ball.position)
+            my_pos = np.array(player.car_data.position)
+            
+            # Store position and boost
+            TsunamiSurge._shared_state['positions'][self.index] = my_pos
+            TsunamiSurge._shared_state['boost_status'][self.index] = player.boost_amount
+            
+            # Calculate distance to ball for role assignment
+            ball_distance = np.linalg.norm(my_pos[:2] - ball_pos[:2])
+            
+            # Determine ball chaser (closest bot with sufficient boost)
+            teammates = [p for p in self.game_state.players if p.team_num == self.team]
+            if len(teammates) > 1:
+                # Only become ball chaser if no one else is, or if we're significantly closer
+                current_chaser = TsunamiSurge._shared_state.get('ball_chaser')
+                if current_chaser is None or current_chaser not in TsunamiSurge._shared_state['positions']:
+                    # No chaser assigned yet
+                    TsunamiSurge._shared_state['ball_chaser'] = self.index
+                else:
+                    # Check if we should take over as chaser
+                    chaser_pos = TsunamiSurge._shared_state['positions'].get(current_chaser)
+                    if chaser_pos is not None:
+                        chaser_distance = np.linalg.norm(chaser_pos[:2] - ball_pos[:2])
+                        # Take over if we're closer (250 units) and have boost
+                        if ball_distance < chaser_distance - 250 and player.boost_amount > 12:
+                            TsunamiSurge._shared_state['ball_chaser'] = self.index
+            
+            # Assign roles based on ball chaser
+            is_chaser = (TsunamiSurge._shared_state.get('ball_chaser') == self.index)
+            TsunamiSurge._shared_state['assignments'][self.index] = 'attacker' if is_chaser else 'support'
 
         if self.isToxic:
             self.toxicity(packet)

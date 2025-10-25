@@ -108,10 +108,12 @@ class NectoStateSetter(StateSetter):
     ):  # add goalie_prob/shooting/dribbling?
         super().__init__()
         self.redis = redis
+        # Handle case where replay-arrays doesn't exist yet in Redis
+        replay_data = redis.get("replay-arrays")
         self.replay_setters = [
             NectoReplaySetter(replay_array)
-            for replay_array in _unserialize(redis.get("replay-arrays"))
-        ]
+            for replay_array in _unserialize(replay_data)
+        ] if replay_data is not None else []
         self.setters = [
             BetterRandom(),
             DefaultState(),
