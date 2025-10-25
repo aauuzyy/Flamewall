@@ -13,12 +13,18 @@ class FlamewallRL(BaseAgent):
     RL Bot that uses the trained Stable-Baselines3 PPO model
     """
     
+    # Shared cache across all bot instances
+    _shared_cache = {}
+    
     def __init__(self, name, team, index):
         super().__init__(name, team, index)
         self.model = None
         self.model_loaded = False
         self.obs_builder = None
         self.action_parser = None
+        self._frame_skip = 1  # Process every frame (tick rate reduced to 30Hz in config)
+        self._frame_count = 0
+        self._last_controls = SimpleControllerState()
         
     def initialize_agent(self):
         """Load the trained model"""
@@ -65,18 +71,14 @@ class FlamewallRL(BaseAgent):
                             best_model = special_path
             
             if best_model:
-                print(f"Loading trained model: {best_model}")
-                print(f"  Training steps: {best_steps if best_steps > 0 else 'final'}")
                 self.model = PPO.load(best_model)
                 self.obs_builder = DefaultObs(zero_padding=11)  # MUST match training!
                 self.action_parser = LookupTableAction()
                 self.model_loaded = True
-                print("✓ Model loaded successfully!")
             else:
-                print("⚠️  No trained model found! Train a model first.")
+                pass  # No model found
                 
         except Exception as e:
-            print(f"Error loading model: {e}")
             self.model_loaded = False
     
     def get_output(self, packet: GameTickPacket) -> SimpleControllerState:
@@ -89,9 +91,19 @@ class FlamewallRL(BaseAgent):
             # Fallback: just sit still if model isn't loaded
             return controls
         
+        # Frame skipping for performance - only process every Nth frame
+        self._frame_count += 1
+        if self._frame_count % self._frame_skip != 0:
+            return self._last_controls
+        
         try:
-            # Convert packet to RLGym state
-            rlgym_state = self._packet_to_rlgym_state(packet)
+            # Use shared cache across all bots to avoid rebuilding state 3 times
+            cache_key = packet.game_info.seconds_elapsed
+            if cache_key not in FlamewallRL._shared_cache:
+                FlamewallRL._shared_cache.clear()  # Clear old cache
+                FlamewallRL._shared_cache[cache_key] = self._packet_to_rlgym_state(packet)
+            
+            rlgym_state = FlamewallRL._shared_cache[cache_key]
             
             # Build observation using RLGym's obs builder
             # RLGym 2.0 API: build_obs(agents, state, shared_info) returns {player_id: obs_array}
@@ -106,15 +118,15 @@ class FlamewallRL(BaseAgent):
             # Convert action to controls using RLGym's action parser
             controls = self._rlgym_action_to_controls(action, rlgym_state)
             
+            # Cache for frame skipping
+            self._last_controls = controls
+            
         except Exception as e:
-            import traceback
-            # Only print error once (not every frame)
+            # Only log critical errors once
             if not hasattr(self, '_error_logged'):
-                print(f"Error getting model output: {e}")
-                print("Full traceback:")
+                import traceback
                 traceback.print_exc()
                 self._error_logged = True
-            # Return default controls on error
             pass
         
         return controls
@@ -143,7 +155,7 @@ class FlamewallRL(BaseAgent):
                     if key in name.lower():
                         return val
                 # Physics object should be a FlexibleObject too
-                if name == 'physics':
+                if name == 'physics' or name == 'inverted_physics':
                     return FlexibleObject()
                 # Boolean attributes default to False (but return int-convertible)
                 if name.startswith('is_') or name.startswith('has_') or name.startswith('can_') or name == 'on_ground':
@@ -207,6 +219,19 @@ class FlamewallRL(BaseAgent):
                     
                     # Use FlexibleObject - it will handle ANY missing attribute!
                     # Convert all boolean-like values to plain int (0 or 1) for compatibility
+                    
+                    # Calculate inverted physics for this car
+                    inv_car_pos = np.array([car.physics.location.x, car.physics.location.y, car.physics.location.z]) * np.array([-1, -1, 1])
+                    inv_car_vel = np.array([car.physics.velocity.x, car.physics.velocity.y, car.physics.velocity.z]) * np.array([-1, -1, 1])
+                    inv_car_ang_vel = np.array([car.physics.angular_velocity.x, car.physics.angular_velocity.y, car.physics.angular_velocity.z]) * np.array([-1, -1, 1])
+                    inv_car_pitch, inv_car_yaw, inv_car_roll = -pitch, yaw + np.pi, -roll
+                    inv_car_quat = np.array([
+                        cos(inv_car_roll/2)*cos(inv_car_pitch/2)*cos(inv_car_yaw/2) + sin(inv_car_roll/2)*sin(inv_car_pitch/2)*sin(inv_car_yaw/2),
+                        sin(inv_car_roll/2)*cos(inv_car_pitch/2)*cos(inv_car_yaw/2) - cos(inv_car_roll/2)*sin(inv_car_pitch/2)*sin(inv_car_yaw/2),
+                        cos(inv_car_roll/2)*sin(inv_car_pitch/2)*cos(inv_car_yaw/2) + sin(inv_car_roll/2)*cos(inv_car_pitch/2)*sin(inv_car_yaw/2),
+                        cos(inv_car_roll/2)*cos(inv_car_pitch/2)*sin(inv_car_yaw/2) - sin(inv_car_roll/2)*sin(inv_car_pitch/2)*cos(inv_car_yaw/2)
+                    ])
+                    
                     self.cars[i] = FlexibleObject(
                         team_num=BLUE_TEAM if car.team == 0 else ORANGE_TEAM,
                         position=np.array([car.physics.location.x, car.physics.location.y, car.physics.location.z]),
@@ -225,6 +250,19 @@ class FlamewallRL(BaseAgent):
                             right=np.array([sin(yaw)*sin(pitch)*cos(roll) - cos(yaw)*sin(roll),
                                           -cos(yaw)*sin(pitch)*cos(roll) - sin(yaw)*sin(roll),
                                           cos(pitch)*cos(roll)]),
+                        ),
+                        inverted_physics=FlexibleObject(
+                            position=inv_car_pos,
+                            linear_velocity=inv_car_vel,
+                            angular_velocity=inv_car_ang_vel,
+                            quaternion=inv_car_quat,
+                            forward=np.array([cos(inv_car_yaw)*cos(inv_car_pitch), sin(inv_car_yaw)*cos(inv_car_pitch), sin(inv_car_pitch)]),
+                            up=np.array([-cos(inv_car_yaw)*sin(inv_car_pitch)*sin(inv_car_roll) - sin(inv_car_yaw)*cos(inv_car_roll),
+                                       -sin(inv_car_yaw)*sin(inv_car_pitch)*sin(inv_car_roll) + cos(inv_car_yaw)*cos(inv_car_roll),
+                                       cos(inv_car_pitch)*sin(inv_car_roll)]),
+                            right=np.array([sin(inv_car_yaw)*sin(inv_car_pitch)*cos(inv_car_roll) - cos(inv_car_yaw)*sin(inv_car_roll),
+                                          -cos(inv_car_yaw)*sin(inv_car_pitch)*cos(inv_car_roll) - sin(inv_car_yaw)*sin(inv_car_roll),
+                                          cos(inv_car_pitch)*cos(inv_car_roll)]),
                         ),
                         boost_amount=float(car.boost / 100.0),
                         on_ground=int(bool(car.has_wheel_contact)),
@@ -274,6 +312,19 @@ class FlamewallRL(BaseAgent):
                                           -cos(inv_yaw)*sin(inv_pitch)*cos(inv_roll) - sin(inv_yaw)*sin(inv_roll),
                                           cos(inv_pitch)*cos(inv_roll)]),
                         ),
+                        inverted_physics=FlexibleObject(
+                            position=inv_pos,
+                            linear_velocity=inv_vel,
+                            angular_velocity=inv_ang_vel,
+                            quaternion=inv_quat,
+                            forward=np.array([cos(inv_yaw)*cos(inv_pitch), sin(inv_yaw)*cos(inv_pitch), sin(inv_pitch)]),
+                            up=np.array([-cos(inv_yaw)*sin(inv_pitch)*sin(inv_roll) - sin(inv_yaw)*cos(inv_roll),
+                                       -sin(inv_yaw)*sin(inv_pitch)*sin(inv_roll) + cos(inv_yaw)*cos(inv_roll),
+                                       cos(inv_pitch)*sin(inv_roll)]),
+                            right=np.array([sin(inv_yaw)*sin(inv_pitch)*cos(inv_roll) - cos(inv_yaw)*sin(inv_roll),
+                                          -cos(inv_yaw)*sin(inv_pitch)*cos(inv_roll) - sin(inv_yaw)*sin(inv_roll),
+                                          cos(inv_pitch)*cos(inv_roll)]),
+                        ),
                         boost_amount=float(car.boost / 100.0),
                         on_ground=int(bool(car.has_wheel_contact)),
                         ball_touches=0,
@@ -296,25 +347,38 @@ class FlamewallRL(BaseAgent):
         """Convert RLGym action to RLBot controls"""
         try:
             # Parse action using RLGym's action parser
-            # Create actions dict for all agents (just use 0 for others)
-            actions = {i: np.array([0]) for i in state.cars.keys()}
-            actions[self.index] = np.array([action])
+            # action is a numpy scalar, need to convert to int and reshape
+            action_int = int(action.item() if hasattr(action, 'item') else action)
+            action_array = np.array([action_int], dtype=np.int64)  # Shape (1,), integer type for indexing
             
+            # Create actions dict for all agents (just use 0 for others)
+            actions = {i: np.array([0], dtype=np.int64) for i in state.cars.keys()}
+            actions[self.index] = action_array
+            
+            # parse_actions returns a dict of numpy arrays with shape (8,) containing:
+            # [throttle, steer, pitch, yaw, roll, jump, boost, handbrake]
             rlgym_controls_dict = self.action_parser.parse_actions(actions, state, {})
-            rlgym_controls = rlgym_controls_dict[self.index]
+            control_array = rlgym_controls_dict[self.index]  # This is a numpy array
+            
+            # Flatten to 1D and extract values
+            control_array = np.asarray(control_array).flatten()
             
             # Convert to RLBot format
             controls = SimpleControllerState()
-            controls.throttle = float(np.array(rlgym_controls.throttle).item())
-            controls.steer = float(np.array(rlgym_controls.steer).item())
-            controls.pitch = float(np.array(rlgym_controls.pitch).item())
-            controls.yaw = float(np.array(rlgym_controls.yaw).item())
-            controls.roll = float(np.array(rlgym_controls.roll).item())
-            controls.jump = bool(rlgym_controls.jump)
-            controls.boost = bool(rlgym_controls.boost)
-            controls.handbrake = bool(rlgym_controls.handbrake)
+            controls.throttle = float(control_array[0])
+            controls.steer = float(control_array[1])
+            controls.pitch = float(control_array[2])
+            controls.yaw = float(control_array[3])
+            controls.roll = float(control_array[4])
+            controls.jump = bool(control_array[5])
+            controls.boost = bool(control_array[6])
+            controls.handbrake = bool(control_array[7])
             
             return controls
         except Exception as e:
-            # Return default controls on error
+            # Only log critical errors once
+            if not hasattr(self, '_action_error_logged'):
+                import traceback
+                traceback.print_exc()
+                self._action_error_logged = True
             return SimpleControllerState()
