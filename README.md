@@ -33,6 +33,15 @@ Yes! Use the RLBot GUI to launch matches against Flamewall.
 Flamewall is trained using a distributed learning system with RLGym 2.0.
 Check `TRAINING_GUIDE.md` for information on customization and continued training.
 
+## Watch Flamewall Learn! 🎥
+
+Want to see the training process live? Check out these channels:
+
+- **[Twitch: aauuzy](https://www.twitch.tv/aauuzy)** - Watch Flamewall training live!
+- **[YouTube: aauuzy](https://www.youtube.com/@aauuzy)** - Videos and highlights
+
+Follow along as Flamewall improves through reinforcement learning!
+
 ## Technical Details
 
 Flamewall uses an **attention-based neural network** architecture that processes game state efficiently:
