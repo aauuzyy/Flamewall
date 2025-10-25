@@ -14,9 +14,9 @@ import os
 import numpy as np
 from rlgym.api import RLGym
 from rlgym.rocket_league.action_parsers import LookupTableAction
-from rlgym.rocket_league.done_conditions import GoalCondition, TimeoutCondition, NoTouchTimeoutCondition
+from rlgym.rocket_league.done_conditions import GoalCondition, TimeoutCondition, NoTouchTimeoutCondition, AnyCondition
 from rlgym.rocket_league.obs_builders import DefaultObs
-from rlgym.rocket_league.reward_functions import CombinedReward, GoalReward, TouchReward, VelocityPlayerToBallReward
+from rlgym.rocket_league.reward_functions import CombinedReward, GoalReward, TouchReward
 from rlgym.rocket_league.sim import RocketSimEngine
 from rlgym.rocket_league.state_mutators import MutatorSequence, FixedTeamSizeMutator, KickoffMutator
 import rlgym.rocket_league.math as rlm
@@ -43,7 +43,7 @@ class FlamewallTeamReward:
         self.last_touch_height = {}  # Track height of last touch
         self.last_boost_amounts = {}  # Track boost usage for feathering rewards
         
-    def reset(self, initial_state, shared_info):
+    def reset(self, agents, initial_state, shared_info):
         """Reset tracking for new episode"""
         episode_id = id(initial_state)
         self.last_ball_toucher[episode_id] = None
@@ -213,18 +213,22 @@ class GymnasiumWrapper(gym.Env):
         super().__init__()
         self.env = env
         
-        # Get spaces from first agent
-        sample_obs = next(iter(env.observation_space.values()))
-        sample_act = next(iter(env.action_space.values()))
+        # Reset to get observation spaces
+        obs_dict = env.reset()
+        sample_obs = next(iter(obs_dict.values()))
         
-        self.observation_space = sample_obs
-        self.action_space = sample_act
+        # Create spaces based on sample
+        from gymnasium import spaces
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=sample_obs.shape, dtype=np.float32
+        )
+        self.action_space = spaces.Discrete(90)  # LookupTableAction has 90 actions
         
         # Track our controlled agents (blue team)
         self.our_agents = None
         
     def reset(self, **kwargs):
-        obs_dict, info_dict = self.env.reset()
+        obs_dict = self.env.reset()  # RLGym returns only obs_dict
         
         # Identify blue team agents (our Flamewalls)
         state = self.env._env._game_state
@@ -232,8 +236,8 @@ class GymnasiumWrapper(gym.Env):
         
         # Return first blue agent's observation
         if self.our_agents:
-            return obs_dict[self.our_agents[0]], info_dict.get(self.our_agents[0], {})
-        return obs_dict[0], info_dict.get(0, {})
+            return obs_dict[self.our_agents[0]], {}
+        return obs_dict[0], {}
     
     def step(self, action):
         # Create action dict for all our agents (same action = coordinated learning)
@@ -283,25 +287,25 @@ def make_env():
     reward_fn = FlamewallTeamReward()
     
     # Terminal conditions
-    terminal_conditions = [
+    terminal_condition = AnyCondition(
         TimeoutCondition(timeout_seconds=30),  # 30 second games
         GoalCondition(),
         NoTouchTimeoutCondition(timeout_seconds=15),  # Reset if no one touches for 15s
-    ]
+    )
     
     # State mutators (3v3 setup with kickoffs)
-    mutators = MutatorSequence([
+    mutators = MutatorSequence(
         FixedTeamSizeMutator(blue_size=3, orange_size=3),  # 3v3!
         KickoffMutator(),
-    ])
+    )
     
     # Create environment
     rlgym_env = RLGym(
         state_mutator=mutators,
-        obs_builder=DefaultObs(zero_padding=None),
+        obs_builder=DefaultObs(zero_padding=11),  # MUST match training! 492 dims
         action_parser=LookupTableAction(),
         reward_fn=reward_fn,
-        termination_cond=terminal_conditions,
+        termination_cond=terminal_condition,
         transition_engine=RocketSimEngine(),
     )
     
