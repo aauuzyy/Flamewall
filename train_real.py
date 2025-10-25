@@ -130,7 +130,7 @@ def create_rlgym_env():
     
     # How to reset/initialize episodes
     state_mutator = MutatorSequence(
-        FixedTeamSizeMutator(blue_size=1, orange_size=1),  # 1v1
+        FixedTeamSizeMutator(blue_size=3, orange_size=3),  # 3v3 - TRIPLE THE LEARNING!
         KickoffMutator()  # Start from kickoff
     )
     
@@ -147,7 +147,8 @@ def create_rlgym_env():
     )
     
     print(f"✓ Environment created successfully!")
-    print(f"  Team size: 1v1")
+    print(f"  Team size: 3v3 (TRIPLE THE LEARNING!)")
+    print(f"  6 bots learning simultaneously!")
     print(f"  Physics: RocketSim (real Rocket League physics)")
     
     # Wrap for Gymnasium compatibility
@@ -163,8 +164,8 @@ def train():
     Main training function
     """
     # Setup directories
-    models_dir = "models/rlgym_real"
-    logs_dir = "logs/rlgym_real"
+    models_dir = "models/flamewall_team"
+    logs_dir = "logs/flamewall_team"
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
     
