@@ -1,16 +1,38 @@
 # Flamewall 🔥
 
+## Two Bots, One Package!
+
+This repository contains **TWO specialized Flamewall bots:**
+
+1. **Flamewall** - 3v3 team play specialist with hivemind coordination
+2. **フレイムウォール** (Fureimu Wōru) - 1v1 duel specialist with aggressive tuning
+
+See `HOW_TO_USE_BOTH_BOTS.md` for setup instructions!
+
 ## What is this?
 
-Flamewall is a **hivemind AI bot** with coordinated team play capabilities for Rocket League.
-Trained using Deep Reinforcement Learning with RLGym, Flamewall adds intelligent team coordination where multiple bots work together as a unified strategy.
+**Flamewall (3v3 Version)** is a hivemind AI bot with coordinated team play capabilities for Rocket League.
+Trained using Deep Reinforcement Learning with RLGym, it features intelligent team coordination where multiple bots work together as a unified strategy.
 
-**Key Features:**
+**フレイムウォール (1v1 Version)** is an aggressive duel specialist optimized for 1v1 matches with faster reactions and pure offensive play.
+
+**Key Features (3v3 Bot):**
 - 🧠 **Hivemind Coordination**: Bots share state and dynamically assign roles
 - ⚡ **Efficient Performance**: Optimized observation system for smooth gameplay
 - 🎯 **Dynamic Role Assignment**: Automatic attacker/support role switching
 - 🤝 **Team Strategy**: Bots avoid ball chasing and maintain strategic positioning
 - 🏆 **Competitive Level**: Trained with PPO using attention mechanisms
+
+**Key Features (1v1 Bot):**
+- ⚔️ **Pure Aggression**: Beta=1.5 for aggressive decision making
+- ⚡ **Lightning Fast**: tick_skip=4 for ultra-fast reactions (30 actions/sec!)
+- 🎯 **No Hivemind Overhead**: Optimized for solo play
+- � **Demo Detection System**: Detects opponents camping in goal (Nexto's weakness!)
+- 🐌 **Slow Dribble Tactic**: Beta=0.8 for controlled approach to goal
+- 💣 **ULTRA DEMO MODE**: Beta=2.0 when going for the demolition
+- 🏆 **Duel Optimized**: Exploits defensive bots with tactical demos
+
+See `1v1_DEMO_STRATEGY.md` for the full tactical breakdown! 💥
 
 ## How does it work?
 
